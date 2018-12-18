@@ -34,6 +34,8 @@ import javax.servlet.http.HttpServletRequest
  */
 class InterceptorSpec extends Specification {
 
+    def grailsApplication
+
     void cleanup() {
         RequestContextHolder.setRequestAttributes(null)
     }
@@ -359,6 +361,24 @@ class InterceptorSpec extends Specification {
         '/grails/foo/x'       | true
     }
 
+    @Issue('https://github.com/grails/grails-core/issues/11165')
+    void "Test if the interceptor is correctly matching on hyphenated urls"() {
+
+        given:"An interceptor"
+        def interceptor = new MyHyphenatedInterceptor()
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+        HttpServletRequest request = webRequest.request
+
+        when: "request goes to /foo-bar"
+        request.setAttribute(
+                UrlMappingsHandlerMapping.MATCHED_REQUEST,
+                new ForwardUrlMappingInfo(URI: '/foo-bar')
+        )
+
+        then: "We match"
+        interceptor.doesMatch()
+    }
+
     void clearMatch(i, HttpServletRequest request) {
         request.removeAttribute(i.getClass().name + InterceptorArtefactHandler.MATCH_SUFFIX)
     }
@@ -449,5 +469,27 @@ class TestExcludeUriWithoutContextPathInterceptor implements Interceptor {
 class TestExcludeUriWithContextPathInterceptor implements Interceptor {
     TestExcludeUriWithContextPathInterceptor() {
         matchAll().excludes(uri: "/grails/mgmt/*")
+    }
+}
+
+class MyHyphenatedInterceptor implements Interceptor{
+
+    MyHyphenatedInterceptor() {
+        match(controller: 'fooBar')
+    }
+
+    @Override
+    boolean before() {
+        return false
+    }
+
+    @Override
+    boolean after() {
+        return false
+    }
+
+    @Override
+    void afterView() {
+
     }
 }
