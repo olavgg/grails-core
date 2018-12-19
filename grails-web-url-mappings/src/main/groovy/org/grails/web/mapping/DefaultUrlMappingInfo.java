@@ -18,6 +18,7 @@ package org.grails.web.mapping;
 import grails.boot.GrailsApp;
 import grails.util.GrailsNameUtils;
 import grails.web.CamelCaseUrlConverter;
+import grails.web.HyphenatedUrlConverter;
 import grails.web.UrlConverter;
 
 import java.util.Collections;
@@ -180,6 +181,9 @@ public class DefaultUrlMappingInfo extends AbstractUrlMappingInfo {
 
     public String getNamespace() {
         String name = evaluateNameForValue(namespace);
+        if(this.urlConverter instanceof HyphenatedUrlConverter){
+            return convertHyphenatedNameToCamelCase(name);
+        }
         return urlConverter.toUrlElement(name);
     }
     public String getControllerName() {
@@ -187,6 +191,9 @@ public class DefaultUrlMappingInfo extends AbstractUrlMappingInfo {
         if (name == null && getViewName() == null && uri == null) {
             throw new UrlMappingException("Unable to establish controller name to dispatch for [" +
                     controllerName + "]. Dynamic closure invocation returned null. Check your mapping file is correct, when assigning the controller name as a request parameter it cannot be an optional token!");
+        }
+        if(this.urlConverter instanceof HyphenatedUrlConverter){
+            return convertHyphenatedNameToCamelCase(name);
         }
         return urlConverter.toUrlElement(name);
     }
@@ -198,6 +205,9 @@ public class DefaultUrlMappingInfo extends AbstractUrlMappingInfo {
         if (name == null) {
             name = evaluateNameForValue(actionName, webRequest);
         }
+        if(this.urlConverter instanceof HyphenatedUrlConverter){
+            return convertHyphenatedNameToCamelCase(name);
+        }
         return urlConverter.toUrlElement(name);
     }
 
@@ -207,6 +217,23 @@ public class DefaultUrlMappingInfo extends AbstractUrlMappingInfo {
 
     public String getId() {
         return evaluateNameForValue(id);
+    }
+
+    private String convertHyphenatedNameToCamelCase(String name) {
+        char[] chars = name.toCharArray();
+        StringBuilder stringBuffer = new StringBuilder();
+
+        for(int i = 0; i < chars.length; i++){
+            char c;
+            if(chars[i] == '-'){
+                i++;
+                c = Character.toUpperCase(chars[i]);
+            } else {
+                c = chars[i];
+            }
+            stringBuffer.append(c);
+        }
+        return stringBuffer.toString();
     }
 
     private String checkDispatchAction(HttpServletRequest request) {
