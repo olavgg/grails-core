@@ -181,7 +181,7 @@ public class DefaultUrlMappingInfo extends AbstractUrlMappingInfo {
 
     public String getNamespace() {
         String name = evaluateNameForValue(namespace);
-        if(this.urlConverter instanceof HyphenatedUrlConverter){
+        if(name != null && this.urlConverter instanceof HyphenatedUrlConverter){
             return convertHyphenatedNameToCamelCase(name);
         }
         return urlConverter.toUrlElement(name);
@@ -192,7 +192,7 @@ public class DefaultUrlMappingInfo extends AbstractUrlMappingInfo {
             throw new UrlMappingException("Unable to establish controller name to dispatch for [" +
                     controllerName + "]. Dynamic closure invocation returned null. Check your mapping file is correct, when assigning the controller name as a request parameter it cannot be an optional token!");
         }
-        if(this.urlConverter instanceof HyphenatedUrlConverter){
+        if(name != null && this.urlConverter instanceof HyphenatedUrlConverter){
             return convertHyphenatedNameToCamelCase(name);
         }
         return urlConverter.toUrlElement(name);
@@ -205,7 +205,7 @@ public class DefaultUrlMappingInfo extends AbstractUrlMappingInfo {
         if (name == null) {
             name = evaluateNameForValue(actionName, webRequest);
         }
-        if(this.urlConverter instanceof HyphenatedUrlConverter){
+        if(name != null && this.urlConverter instanceof HyphenatedUrlConverter){
             return convertHyphenatedNameToCamelCase(name);
         }
         return urlConverter.toUrlElement(name);
