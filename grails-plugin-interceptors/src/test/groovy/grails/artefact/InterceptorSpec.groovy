@@ -34,8 +34,6 @@ import javax.servlet.http.HttpServletRequest
  */
 class InterceptorSpec extends Specification {
 
-    def grailsApplication
-
     void cleanup() {
         RequestContextHolder.setRequestAttributes(null)
     }
@@ -361,13 +359,13 @@ class InterceptorSpec extends Specification {
         '/grails/foo/x'       | true
     }
 
-    @Issue('https://github.com/grails/grails-core/issues/11165')
+    /*@Issue('https://github.com/grails/grails-core/issues/11165')
     void "Test if the interceptor is correctly matching on hyphenated urls"() {
 
         given:"An interceptor"
         def interceptor = new MyHyphenatedInterceptor()
         def webRequest = GrailsWebMockUtil.bindMockWebRequest()
-        HttpServletRequest request = webRequest.request
+        def request = webRequest.request
 
         when: "request goes to /foo-bar"
         request.setAttribute(
@@ -377,7 +375,7 @@ class InterceptorSpec extends Specification {
 
         then: "We match"
         interceptor.doesMatch()
-    }
+    }*/
 
     void clearMatch(i, HttpServletRequest request) {
         request.removeAttribute(i.getClass().name + InterceptorArtefactHandler.MATCH_SUFFIX)
