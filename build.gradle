@@ -15,12 +15,16 @@ buildscript {
         classpath "io.github.groovylang.groovydoc:groovydoc-gradle-plugin:1.0.1"
         classpath "javax.xml.bind:jaxb-api:$jaxbVersion"
         classpath "com.sun.xml.bind:jaxb-impl:$jaxbVersion"
+        classpath "org.codehaus.groovy.modules.http-builder:http-builder:0.7.1"
     }
 }
 
-apply plugin: 'idea'
+import groovyx.net.http.RESTClient
+import static groovyx.net.http.ContentType.*
 
+apply plugin: 'idea'
 ext {
+    isJava8Compatible = org.gradle.api.JavaVersion.current().isJava8Compatible()
     bintrayPublish = false
     // Sets release version
     grailsVersion = '4.0.0.BUILD-SNAPSHOT'
@@ -28,7 +32,6 @@ ext {
     // grailsVersion = '4.0.0'
     isBuildSnapshot = grailsVersion.endsWith(".BUILD-SNAPSHOT")
     isTravisBuild = System.getenv().get("TRAVIS") == 'true'
-    springLoadedCommonOptions = "-Xverify:none -Dspringloaded.synchronize=true -Djdk.reflect.allowGetCallerClass=true"
     dependencyVersions = [
         'javax.annotation-api': [
                 version: javaxAnnotationApiVersion,
@@ -48,11 +51,16 @@ ext {
                 names:['micronaut-spring'],
                 modules:['context','boot', 'web', 'boot-annotation', 'annotation', 'web-annotation']
         ],
-        datastore: [
+        gorm: [
             version: datastoreVersion,
             group  : 'org.grails',
             names  : ['grails-datastore'],
-            modules: ['core', 'simple', 'web', 'rest-client', 'gorm', 'gorm-validation', 'gorm-support', 'gorm-async', 'test-support', 'hibernate-core', 'gorm-test']
+            modules: ['async','core', 'web', 'gorm','gorm-async','gorm-support', 'gorm-rx', 'gorm-test', 'gorm-validation']
+        ],
+        'gorm.hibernate': [
+            version: hibernateDatastoreVersion,
+            group  : 'org.grails',
+            names  : ['grails-datastore-gorm-hibernate5']
         ],
         'scaffolding-core': [
                 version: scaffoldingCoreVersion,
@@ -76,12 +84,6 @@ ext {
             version: directoryWatcherVersion,
             group  : 'io.methvin',
             names  : ['directory-watcher'],
-            modules: ['']
-        ],
-        springLoaded: [
-            version: springLoadedVersion,
-            group  : 'org.springframework',
-            names  : ['springloaded'],
             modules: ['']
         ],
         async: [
@@ -525,6 +527,36 @@ task clean(type: Delete) {
            homeSrcDir
 }
 
+task synchronizeWithMavenCentral() {
+    description = "Syncs with Maven Central/Sonatype"
+    doLast {
+        println """
+Synchronizing with Maven central. This may take a few minutes ...
+If this fails, log on to http://oss.sonatype.org/ using the centralUser credentials
+and progress through process manually -> Close -> Publish ... under staging repositories
+"""
+        try {
+            // doesn't exist.. try sync
+            def client = new RESTClient('https://api.bintray.com/maven_central_sync/grails/grails-core/')
+            client.headers['Authorization'] = 'Basic ' + "$bintrayUser:$bintrayKey".getBytes('iso-8859-1').encodeBase64()
+            def body = /{}/
+            def resp = client.post(
+                    path: "grails-core/versions/$grailsVersion",
+                    body: body,
+                    requestContentType: JSON
+            )
+            assert resp.status == 200
+            println resp.data.status
+            println resp.data.messages.join('\n')
+        } catch (groovyx.net.http.HttpResponseException e) {
+            println "Error: $e"
+            println "Message: $e.message"
+            println "Body: $e.response.data"
+            throw e
+        }
+    }
+}
+
 // From this point on we need the subprojects to be fully configured, so force their full evaluation
 subprojects.each {
     if (it.tasks.findByName('install') && it.tasks.findByName('publishToMavenLocal')) {
@@ -555,6 +587,16 @@ task buildscriptDependencies(type: org.gradle.api.tasks.diagnostics.DependencyRe
         // http://www.adam-bien.com/roller/abien/entry/trouble_with_crippled_java_ee
         if (classpath) {
             classpath -= classpath.filter { it.name == 'javaee-web-api-6.0.jar' }
+        }
+    }
+}
+
+project.afterEvaluate {
+    allprojects.repositories.each { handler ->
+        handler.each {
+            if (it.url.toString().startsWith("http://")) {
+                throw new RuntimeException("Build should not define insecure HTTP-based Maven repostories")
+            }
         }
     }
 }

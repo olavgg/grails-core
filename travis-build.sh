@@ -41,7 +41,7 @@ if [[ $EXIT_STATUS -eq 0 ]]; then
 
 	    echo "Running Gradle publish for branch $TRAVIS_BRANCH"
 	    ./gradlew --stop
-	    ./gradlew --no-daemon bintrayUpload
+	    ./gradlew --no-daemon publish bintrayUpload
 
 	    if [[ $EXIT_STATUS == 0 ]]; then
 	        ./gradlew --stop
@@ -49,11 +49,11 @@ if [[ $EXIT_STATUS -eq 0 ]]; then
 
 	        if [[ $EXIT_STATUS == 0 ]]; then
 			    # Tag and release the docs
-			    version="$TRAVIS_TAG"
-                            version=${version:1}
-                            majorVersion=${version:0:4}
-                            majorVersion="${majorVersion}x"
-                            git clone https://${GH_TOKEN}@github.com/grails/grails-doc.git -b ${majorVersion} grails-doc --single-branch > /dev/null
+			    # version="$TRAVIS_TAG"
+       #                      version=${version:1}
+       #                      majorVersion=${version:0:4}
+       #                      majorVersion="${majorVersion}x"
+                git clone https://${GH_TOKEN}@github.com/grails/grails-doc.git -b master grails-doc --single-branch > /dev/null
 			    cd grails-doc
 
 			    echo "grails.version=${TRAVIS_TAG:1}" > gradle.properties
@@ -65,13 +65,17 @@ if [[ $EXIT_STATUS -eq 0 ]]; then
 			    cd ..
 
 			    # Update the website
+                echo "set released version in static website"      
 			    git clone https://${GH_TOKEN}@github.com/grails/grails-static-website.git
 			    cd grails-static-website
-			    echo -e "${TRAVIS_TAG:1}" >> generator/src/main/resources/versions
-			    git add generator/src/main/resources/versions
-			    git commit -m "Release Grails $TRAVIS_TAG"
-			    git push
+			    version="$TRAVIS_TAG"
+                            version=${version:1}
+			    ./release.sh $version
+	                    git commit -a -m "Updating grails version at static website for Travis build: https://travis-ci.org/$TRAVIS_REPO_SLUG/builds/$TRAVIS_BUILD_ID" && {
+                                git push origin HEAD || true
+                            }			    
 			    cd ..
+			    rm -rf grails-static-website
 
 			    # Rebuild Artifactory index
 			    curl -H "X-Api-Key:$ARTIFACTORY_API_KEY" -X POST "http://repo.grails.org/grails/api/maven?repos=libs-releases-local,plugins-releases-local,plugins3-releases-local,core&force=1"

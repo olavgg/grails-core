@@ -15,7 +15,6 @@
  */
 package org.grails.gradle.plugin.core
 
-import grails.plugins.GrailsVersionUtils
 import grails.util.BuildSettings
 import grails.util.Environment
 import grails.util.GrailsNameUtils
@@ -150,67 +149,9 @@ class GrailsGradlePlugin extends GroovyPlugin {
             project.plugins.apply(DependencyManagementPlugin)
         }
 
-
         DependencyManagementExtension dme = project.extensions.findByType(DependencyManagementExtension)
 
         applyBomImport(dme, project)
-
-        boolean isGorm61 = false
-        boolean hasGormVersion = project.hasProperty('gormVersion')
-        String gormVersion
-
-        if(hasGormVersion) {
-            gormVersion = project.properties['gormVersion'] as String
-            isGorm61 = GrailsVersionUtils.supportsAtLeastVersion(gormVersion, "6.1.0")
-        }
-
-        if (isGorm61) {
-            project.afterEvaluate {
-                DependencySet dependencies = project.configurations.getByName('testCompile').allDependencies
-                boolean hasPluginTesting = false
-                boolean hasGormTest = false
-                dependencies.each {
-                    if (it.name == "grails-plugin-testing") {
-                        hasPluginTesting = true
-                    }
-                    if (it.name == "grails-datastore-gorm-test") {
-                        hasGormTest = true
-                    }
-                }
-                if (hasPluginTesting && !hasGormTest) {
-                    project.dependencies.add "testCompile", "org.grails:grails-datastore-gorm-test:$gormVersion"
-                }
-            }
-        }
-
-        project.configurations.all( { Configuration configuration ->
-            for(oldPluginExcludes in ['async', 'events', 'converters', 'gsp', 'testing']) {
-                configuration.exclude(group:"org.grails", module:"grails-plugin-$oldPluginExcludes".toString())
-            }
-
-            if(hasGormVersion) {
-                if(isGorm61) {
-                    configuration.exclude(module:'grails-datastore-simple')
-                }
-
-                configuration.resolutionStrategy.eachDependency( { DependencyResolveDetails details ->
-                    String dependencyName = details.requested.name
-                    String group = details.requested.group
-                    if(group == 'org.grails' &&
-                            dependencyName.startsWith('grails-datastore')) {
-                        for(suffix in GrailsGradlePlugin.CORE_GORM_LIBRARIES) {
-                            if(dependencyName == "grails-datastore-$suffix") {
-                                details.useVersion(gormVersion)
-                                return
-                            }
-                        }
-                    }
-                    else if(group == 'org.grails.plugins' && GrailsGradlePlugin.CORE_GORM_PLUGINS.contains(dependencyName)) {
-                        details.useVersion(gormVersion - '.RELEASE')
-                    }
-                } as Action<DependencyResolveDetails>)
-            }
-        } as Action<Configuration>)
     }
 
     protected void applySpringBootPlugin(Project project) {
@@ -307,15 +248,18 @@ class GrailsGradlePlugin extends GroovyPlugin {
     @CompileDynamic
     protected void configureApplicationCommands(Project project) {
         def applicationContextCommands = FactoriesLoaderSupport.loadFactoryNames(APPLICATION_CONTEXT_COMMAND_CLASS)
-        for (ctxCommand in applicationContextCommands) {
-            String taskName = GrailsNameUtils.getLogicalPropertyName(ctxCommand, "Command")
-            String commandName = GrailsNameUtils.getScriptName(GrailsNameUtils.getLogicalName(ctxCommand, "Command"))
-            project.tasks.create(taskName, ApplicationContextCommandTask) {
-                classpath = project.sourceSets.main.runtimeClasspath + project.configurations.console
-                command = commandName
-                systemProperty Environment.KEY, System.getProperty(Environment.KEY, Environment.DEVELOPMENT.name)
-                if (project.hasProperty('args')) {
-                    args(CommandLineParser.translateCommandline(project.args))
+        project.afterEvaluate {
+            FileCollection fileCollection = buildClasspath(project, project.configurations.runtime, project.configurations.console)
+            for (ctxCommand in applicationContextCommands) {
+                String taskName = GrailsNameUtils.getLogicalPropertyName(ctxCommand, "Command")
+                String commandName = GrailsNameUtils.getScriptName(GrailsNameUtils.getLogicalName(ctxCommand, "Command"))
+                project.tasks.create(taskName, ApplicationContextCommandTask) {
+                    classpath = fileCollection
+                    command = commandName
+                    systemProperty Environment.KEY, System.getProperty(Environment.KEY, Environment.DEVELOPMENT.name)
+                    if (project.hasProperty('args')) {
+                        args(CommandLineParser.translateCommandline(project.args))
+                    }
                 }
             }
         }
@@ -456,7 +400,7 @@ class GrailsGradlePlugin extends GroovyPlugin {
     @CompileDynamic
     protected JavaExec createConsoleTask(Project project, TaskContainer tasks, Configuration configuration) {
         tasks.create("console", JavaExec) {
-            classpath = project.sourceSets.main.runtimeClasspath + configuration
+            classpath = buildClasspath(project, configuration)
             main = "grails.ui.console.GrailsSwingConsole"
         }
     }
@@ -464,7 +408,7 @@ class GrailsGradlePlugin extends GroovyPlugin {
     @CompileDynamic
     protected JavaExec createShellTask(Project project, TaskContainer tasks, Configuration configuration) {
         tasks.create("shell", JavaExec) {
-            classpath = project.sourceSets.main.runtimeClasspath + configuration
+            classpath = buildClasspath(project, configuration)
             main = "grails.ui.shell.GrailsShell"
             standardInput = System.in
         }
@@ -616,12 +560,20 @@ class GrailsGradlePlugin extends GroovyPlugin {
         project.afterEvaluate {
             ConfigurationContainer configurations = project.configurations
             Configuration runtime = configurations.getByName('runtime')
+            Configuration developmentOnly = configurations.findByName('developmentOnly')
             Configuration console = configurations.getByName('console')
             SourceSet mainSourceSet = SourceSets.findMainSourceSet(project)
             SourceSetOutput output = mainSourceSet?.output
             FileCollection mainFiles = resolveClassesDirs(output, project)
 
-            Jar pathingJar = createPathingJarTask(project, "pathingJar", runtime)
+            Jar pathingJar
+
+            if (developmentOnly != null) {
+                pathingJar = createPathingJarTask(project, "pathingJar", runtime, developmentOnly)
+            } else {
+                pathingJar = createPathingJarTask(project, "pathingJar", runtime)
+            }
+            
             FileCollection pathingClasspath = project.files("${project.buildDir}/resources/main", "${project.projectDir}/gsp-classes", pathingJar.archivePath) + mainFiles
 
             Jar pathingJarCommand = createPathingJarTask(project, "pathingJarCommand", runtime, console)
@@ -646,5 +598,16 @@ class GrailsGradlePlugin extends GroovyPlugin {
 
             }
         }
+    }
+
+    protected FileCollection buildClasspath(Project project, Configuration...configurations) {
+        SourceSet mainSourceSet = SourceSets.findMainSourceSet(project)
+        SourceSetOutput output = mainSourceSet?.output
+        FileCollection mainFiles = resolveClassesDirs(output, project)
+        FileCollection fileCollection = project.files("${project.buildDir}/resources/main", "${project.projectDir}/gsp-classes") + mainFiles
+        configurations.each {
+            fileCollection = fileCollection + it
+        }
+        fileCollection
     }
 }

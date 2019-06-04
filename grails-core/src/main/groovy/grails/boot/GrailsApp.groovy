@@ -12,6 +12,7 @@ import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import io.micronaut.context.ApplicationContext
 import io.micronaut.context.ApplicationContextBuilder
+import io.micronaut.context.ApplicationContextConfiguration
 import io.micronaut.core.util.StringUtils
 import io.micronaut.spring.context.factory.MicronautBeanFactoryConfiguration
 import org.codehaus.groovy.control.CompilationFailedException
@@ -114,11 +115,27 @@ class GrailsApp extends SpringApplication {
         setAllowBeanDefinitionOverriding(true)
         ConfigurableApplicationContext applicationContext = super.createApplicationContext()
         def now = System.currentTimeMillis()
-        ApplicationContextBuilder applicationContextBuilder = newMicronautContextBuilder()
-        if (configuredEnvironment != null) {
-            applicationContextBuilder.environments(
-                    configuredEnvironment.getActiveProfiles()
-            )
+
+        ClassLoader applicationClassLoader = this.classLoader
+        ApplicationContextConfiguration micronautConfiguration = new ApplicationContextConfiguration() {
+            @Override
+            List<String> getEnvironments() {
+                if (configuredEnvironment != null) {
+                    return configuredEnvironment.getActiveProfiles().toList()
+                } else {
+                    return Collections.emptyList()
+                }
+            }
+
+            @Override
+            Optional<Boolean> getDeduceEnvironments() {
+                return Optional.of(false)
+            }
+
+            @Override
+            ClassLoader getClassLoader() {
+                return applicationClassLoader
+            }
         }
 
         List beanExcludes = []
@@ -127,14 +144,11 @@ class GrailsApp extends SpringApplication {
         if (objectMapper != null) {
             beanExcludes.add(objectMapper)
         }
-        applicationContextBuilder.properties(
-                Collections.singletonMap(
-                        MicronautBeanFactoryConfiguration.PREFIX + ".bean-excludes",
-                        (Object)beanExcludes
-                )
-        )
-        applicationContextBuilder.classLoader(this.classLoader)
-        def micronautContext = applicationContextBuilder.build().start();
+        def micronautContext = new io.micronaut.context.DefaultApplicationContext(micronautConfiguration);
+        micronautContext
+                .environment
+                .addPropertySource("grails-config", [(MicronautBeanFactoryConfiguration.PREFIX + ".bean-excludes"): (Object)beanExcludes])
+        micronautContext.start()
         ConfigurableApplicationContext parentContext = micronautContext.getBean(ConfigurableApplicationContext)
         applicationContext.setParent(
                 parentContext
@@ -404,14 +418,7 @@ class GrailsApp extends SpringApplication {
                             this,
                             StringUtils.EMPTY_STRING_ARRAY, (ConfigurableApplicationContext)applicationContext.getParent())
             )
-            String context_path = app.config.getProperty('server.context-path', '')
-            if(context_path){
-                println("WARNING: 'server.context-path: ${context_path}' is deprecated. Please use 'server.contextPath: ${context_path}'")
-            } else {
-                context_path=''
-            }
-            // in spring-boot context-path is chosen before contextPath ...
-            String contextPath = context_path?context_path:app.config.getProperty('server.contextPath', '')
+            String contextPath = app.config.getProperty('server.servlet.context-path', '')
             String hostName = app.config.getProperty('server.address', 'localhost')
             int port
             if (applicationContext instanceof WebServerApplicationContext) {
